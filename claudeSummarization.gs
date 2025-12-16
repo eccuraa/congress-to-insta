@@ -2,11 +2,11 @@
 // CONFIG
 // ----------------------
 const ANTHROPIC_API_KEY = "API_KEY_HERE"; // Get from console.anthropic.com
-const MODEL = "claude-sonnet-4-20250514"; // Claude Sonnet 4 (best balance of speed/quality)
+const MODEL = "claude-sonnet-4-20250514"; // Claude Sonnet 4 (best balance of speed/quality/price)
+
 // ----------------------
 // CORE FUNCTION: Calls Claude API with DEBUG LOGGING
 // ----------------------
-
 function callClaude(promptText) {
   Logger.log("=== callClaude() START ===");
   Logger.log("Prompt received:\n" + promptText);
@@ -142,7 +142,7 @@ function CLAUDE_SUMMARY(text, row) {
 
   Logger.log("Final text to summarize:\n" + text);
 
-  // Build prompt - optimized for Claude
+  // Prompt to accompany official CRS summary input, optimized for Claude
   const prompt =
     `I am managing an Instagram account for politically curious American teenagers and young adults (similar to the Dutch account @checkjestem).
 
@@ -190,7 +190,7 @@ Return ONLY the summary text, nothing else.`;
     
     const result = callClaude(prompt);
     
-    // Check if we got a real response (not an error message)
+    // Check if I got a real response (not an error message)
     if (result && !result.startsWith("(")) {
       summary = result;
       break;
@@ -216,12 +216,4 @@ Return ONLY the summary text, nothing else.`;
   Logger.log("Summary Returned:\n" + summary);
   Logger.log("=== CLAUDE_SUMMARY() END ===");
   return summary;
-}
-
-// ------------------------------------------------------
-// LEGACY FUNCTION NAME (for backward compatibility)
-// Usage in sheet: =GEMINI_SUMMARY(B2, ROW())
-// ------------------------------------------------------
-function GEMINI_SUMMARY(text, row) {
-  return CLAUDE_SUMMARY(text, row);
 }
