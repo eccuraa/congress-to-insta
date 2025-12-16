@@ -1,26 +1,28 @@
 // ===== CONFIGURATION =====
 const CONFIG = {
   // Google Slides template ID (from URL)
-  templateId: "SHEETS_ID",
+  templateId: "1xhn0sgndIIoQT53elvLnpyebWzXsd027XN0EgsEVJRI",
   
   // Google Sheets ID (from URL) - leave empty if running from bound script
   spreadsheetId: "", // Optional: only needed if standalone script
   
   // ImgBB API Key - get from https://api.imgbb.com/
-  imgbbApiKey: "API_KEY_HERE"
+  imgbbApiKey: "YOUR_IMGBB_API_KEY_HERE"
 };
 
 /**
  * ----------------------
- * LOOP OVER ALL ROWS
+ * MAIN FUNCTION: LOOP OVER ALL ROWS
  * ----------------------
- * Checks each row in Scraped Data column A.
+ * Checks each row in Scraped Data column A ("Law Name").
  * Skips empty rows or "No laws found".
  * Generates slide and uploads to ImgBB.
- * Stores URL in Post Components column C.
+ * Stores URL in Post Components column C ("Image URL").
  */
 function generateAllImgBBUrls() {
+  // Defines Google Sheet
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  // Defines each of 2 sheets with variable name
   const scrapedSheet = ss.getSheetByName("Scraped Data");
   const postsSheet = ss.getSheetByName("Post Components");
 
@@ -69,70 +71,11 @@ function generateAllImgBBUrls() {
 
 /**
  * ----------------------
- * MAIN FUNCTION: Single row pipeline
- * ----------------------
- * (kept for reference/testing)
- */
-function createAndUploadSlide() {
-  try {
-    Logger.log('=== Starting Pipeline ===');
-
-    const postText = getTextFromSheet();
-    Logger.log('Text from A2: ' + postText);
-
-    const slideId = createSlideWithText(postText);
-    Logger.log('Created slide with ID: ' + slideId);
-
-    const imageBlob = exportSlideAsImage(slideId, 0);
-    Logger.log('Exported slide as PNG image');
-
-    const imageUrl = uploadToImgBB(imageBlob);
-    Logger.log('✓ Success! ImgBB URL: ' + imageUrl);
-
-    DriveApp.getFileById(slideId).setTrashed(true);
-    Logger.log('Cleaned up temporary slide');
-
-    Logger.log('=== Pipeline Complete ===');
-    return imageUrl;
-
-  } catch (error) {
-    Logger.log('ERROR: ' + error.toString());
-    throw error;
-  }
-}
-
-/**
- * ----------------------
- * Get text from A2 (single-row version)
- * ----------------------
- */
-function getTextFromSheet() {
-  let sheet;
-
-  try {
-    sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  } catch (e) {
-    if (!CONFIG.spreadsheetId) {
-      throw new Error('Not running from spreadsheet and no spreadsheetId configured');
-    }
-    sheet = SpreadsheetApp.openById(CONFIG.spreadsheetId).getActiveSheet();
-  }
-
-  const sheetText = sheet.getRange('A2').getValue();
-
-  if (!sheetText || sheetText.toString().trim() === '') {
-    throw new Error('No text found in cell A2');
-  }
-
-  return sheetText.toString();
-}
-
-/**
- * ----------------------
  * Create slide from template
  * ----------------------
  */
 function createSlideWithText(sheetText) {
+  // Fetch and copy template file, and save new copied slide template ID
   const templateFile = DriveApp.getFileById(CONFIG.templateId);
   const copy = templateFile.makeCopy('Temp_Slide_' + Date.now());
   const slideId = copy.getId();
@@ -140,10 +83,12 @@ function createSlideWithText(sheetText) {
   const presentation = SlidesApp.openById(slideId);
   const slides = presentation.getSlides();
 
+  // Error message if no slides were copied
   if (slides.length === 0) {
     throw new Error('Template has no slides');
   }
 
+  // Replace placeholder ("'text'") text in first slide with LLM summarized CRS summary
   const firstSlide = slides[0];
   firstSlide.replaceAllText('\[text\]', sheetText);
 
@@ -157,6 +102,7 @@ function createSlideWithText(sheetText) {
  * ----------------------
  */
 function exportSlideAsImage(presentationId, slideIndex) {
+  // Redefine these local variables
   const presentation = SlidesApp.openById(presentationId);
   const slides = presentation.getSlides();
 
@@ -167,6 +113,7 @@ function exportSlideAsImage(presentationId, slideIndex) {
   const slide = slides[slideIndex];
   const slideObjectId = slide.getObjectId();
 
+  // Make copied and filled in Google Slideshow link, ready for exporting and posting
   const exportUrl = `https://docs.google.com/presentation/d/${presentationId}/export/png?id=${presentationId}&pageid=${slideObjectId}`;
 
   const options = {
@@ -185,7 +132,7 @@ function exportSlideAsImage(presentationId, slideIndex) {
 
 /**
  * ----------------------
- * Upload PNG to ImgBB
+ * Upload Slides PNG to ImgBB
  * ----------------------
  */
 function uploadToImgBB(imageBlob) {
