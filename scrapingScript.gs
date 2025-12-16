@@ -18,7 +18,7 @@ function fetchPublicLawsToday() {
 
   // 2. Calculate the date 3 days ago (for becameLawDate and dateStr)
   const threeDaysAgo = new Date(now);
-  threeDaysAgo.setDate(now.getDate() - 9); 
+  threeDaysAgo.setDate(now.getDate() - 3); 
 
   // Get the date string (YYYY-MM-DD) by stripping the time off the ISO string
   const dateStr = threeDaysAgo.toISOString().substring(0, 10);
@@ -29,20 +29,24 @@ function fetchPublicLawsToday() {
   // The 'to' timestamp (The current time in full ISO UTC format)
   const maxUploadDate = now.toISOString();
 
+  // Congressional session 119, which is hardcoded as it will not change until 2027
   const congress = 119;
   
   const results = [];
   
+  // Base scraping URL that accesses all bills that underwent some action on the given date
   const url = `${BASE_URL}/law/${congress}?api_key=${API_KEY}&format=json&limit=500&fromDateTime=${becameLawDate}&toDateTime=${maxUploadDate}`;
 
+  // Scrape bills
   try {
     const response = UrlFetchApp.fetch(url);
     const data = JSON.parse(response.getContentText());
     
+    // Log the number of bills that underwent some action or change on the given date (3 days ago from today)
     Logger.log(`Found ${data.bills.length} bills in date range`);
 
 
-    // Filter bills that became law on target date
+    // Filter for bills that became law on target date
     for (const bill of data.bills) {
       
       if (bill.latestAction.actionDate === dateStr &&
@@ -64,6 +68,7 @@ function fetchPublicLawsToday() {
           govURL       // New: The bill URL
         ]);
         
+        // Report finding each bill by sending new law title to log
         Logger.log(`Found: ${bill.title}`);
       }
     }
@@ -73,7 +78,7 @@ function fetchPublicLawsToday() {
   }
   
   
-  // Write results
+  // Write results in sheet
   if (results.length === 0) {
     scrapedData.appendRow(['No laws found', '']);
   } else {
@@ -83,26 +88,33 @@ function fetchPublicLawsToday() {
   scrapedData.autoResizeColumns(1, 2);
 }
 
+
+// After knowing each bill number for the new laws, fetch their official CRS summaries.
 function fetchSummary(congress, billType, billNumber) {
+
+  // URL requiring bill number now, to access a specific bill rather than general search results.
   const url = `${BASE_URL}/bill/${congress}/${billType}/${billNumber}?api_key=${API_KEY}&format=json`;
   
   try {
     const response = UrlFetchApp.fetch(url);
     const data = JSON.parse(response.getContentText());
     
+    // If either the given bill, summary or URL does not exist, write error message in Google Sheet.
     if (!data.bill || !data.bill.summaries || !data.bill.summaries.url) {
-      return 'No summary available';
+      return 'No summary accessed';
     }
     
+    // The API inputs
     const summariesUrl = `${data.bill.summaries.url}&api_key=${API_KEY}`;
     const summariesResponse = UrlFetchApp.fetch(summariesUrl);
     const summariesData = JSON.parse(summariesResponse.getContentText());
     
+    // Another error message if summary section was left blank.
     if (!summariesData.summaries || summariesData.summaries.length === 0) {
       return 'No summary available';
     }
     
-    // Get the last summary
+    // Get the latest summary by taking the most recent index ([number of summaries -1])
     const summary = summariesData.summaries[summariesData.summaries.length - 1];
     return summary.text || 'No summary text';
     
@@ -124,6 +136,7 @@ function formatDateStr(dateStr) {
   return date.toLocaleDateString('en-US', options);
 }
 
+// Creates accurate URL based on bill details, such as where the bill was introduced.
 function findPublicUrl(type, num) {
   const t = type.toLowerCase();
 
@@ -144,7 +157,7 @@ function findPublicUrl(type, num) {
   return `https://www.congress.gov/bill/119th-congress/${path}/${num}`;
 }
 
-
+// Sets up Google Sheet, including column names.
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Congress.gov')
