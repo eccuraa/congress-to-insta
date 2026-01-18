@@ -47,4 +47,3 @@ All legislative data is pulled from [congress.gov](https://congress.gov) using t
 
 ## Credits
 Created by Elena Cura
-Data from congress.gov
