@@ -1,9 +1,10 @@
 # congress-to-insta
 Code files used in my full pipeline in Google AppsScript that is bound to [a Google Sheet](https://docs.google.com/spreadsheets/d/1jR7iJsgD7mwk7vSgY7B_MoUBu9G6OgYscF13t-SD_4g/edit?usp=sharing). 
 Automated Instagram account ([@yea.or.nay_USA](https://www.instagram.com/yea.or.nay_usa/)) that posts summaries of newly passed US laws with visualized congressional voting records.
+See this [presentation](https://docs.google.com/presentation/d/1O2CJdJtFnps8404q8m5fU1SZ_2z0dRrmrRtZzfFFGxE/edit?usp=sharing) on my process.
 
 ## Purpose
-Journalistic tool for young Americans to stay informed about newly passed laws. Full motivation can be found in [drafted write-up](https://docs.google.com/document/d/1Y43Ke7RZ8xVA0rX_uyYEeHsEKPS6bSW7CdWJpClqZNU/edit?usp=sharing) or more quickly within this [presentation](https://docs.google.com/presentation/d/1O2CJdJtFnps8404q8m5fU1SZ_2z0dRrmrRtZzfFFGxE/edit?usp=sharing).
+Journalistic tool for young Americans to stay informed about newly passed laws. Full motivation can be found in [drafted write-up](https://docs.google.com/document/d/1Y43Ke7RZ8xVA0rX_uyYEeHsEKPS6bSW7CdWJpClqZNU/edit?usp=sharing).
 
 ## Data Source
 All legislative data is pulled from [congress.gov](https://congress.gov) using the [Congress.gov API](https://github.com/LibraryOfCongress/api.congress.gov/blob/main/Documentation/BillEndpoint.md)
