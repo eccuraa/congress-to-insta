@@ -27,7 +27,7 @@ All legislative data is pulled from [congress.gov](https://congress.gov) using t
 1. Copy Google Sheet template [link](https://docs.google.com/spreadsheets/d/1jR7iJsgD7mwk7vSgY7B_MoUBu9G6OgYscF13t-SD_4g/edit?usp=sharing)
 2. Add Apps Script files to sheet (Extensions → Apps Script)
 3. Configure API keys in CONFIG object
-4. Set up daily time-based trigger
+4. Set up time-based daily triggers
 
 ## Features
 - ✅ Automated daily scraping & posting
