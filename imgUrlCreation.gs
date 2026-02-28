@@ -7,7 +7,7 @@ const CONFIG = {
   spreadsheetId: "", // Optional: only needed if standalone script
   
   // ImgBB API Key - get from https://api.imgbb.com/
-  imgbbApiKey: "YOUR_IMGBB_API_KEY_HERE"
+  imgbbApiKey: "IMGBB_API_KEY_HERE"
 };
 
 /**
@@ -43,8 +43,9 @@ function generateAllImgBBUrls() {
     try {
       Logger.log(`Processing row ${i}: "${textToUse}"`);
 
-      // Create slide
+      // Add text & images to slide
       const slideId = createSlideWithText(textToUse);
+
 
       // Export slide to PNG
       const imageBlob = exportSlideAsImage(slideId, 0);
@@ -53,15 +54,12 @@ function generateAllImgBBUrls() {
       const imageUrl = uploadToImgBB(imageBlob);
 
       // Save URL in Post Components column C
-      postsSheet.getRange(i, 3).setValue(imageUrl);
+      postsSheet.getRange(i, 8).setValue(imageUrl);
 
       // Clean up temporary slide
       DriveApp.getFileById(slideId).setTrashed(true);
 
       Logger.log(`Row ${i} complete: ImgBB URL -> ${imageUrl}`);
-
-      // Optional pause to avoid hitting API limits
-      Utilities.sleep(500);
 
     } catch (error) {
       Logger.log(`ERROR on row ${i}: ${error.toString()}`);
@@ -92,9 +90,13 @@ function createSlideWithText(sheetText) {
   const firstSlide = slides[0];
   firstSlide.replaceAllText('\[text\]', sheetText);
 
+  // Call function that adjusts graph
+
   presentation.saveAndClose();
   return slideId;
 }
+
+
 
 /**
  * ----------------------
