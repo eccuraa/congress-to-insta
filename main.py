@@ -6,7 +6,7 @@ import urllib.request
 import base64, requests, io, os
 
 BACKGROUND_IMAGE_URL = "https://i.ibb.co/xKVrkLfB/higher-res-base-plot.png"
-IMGBB_API_KEY = "b3f8a3cee0c51f30cb26ac67f1b75f9e"
+IMGBB_API_KEY = "YOUR_IMGBB_API_KEY"
 
 # === Wedge config (unchanged from your notebook) ===
 house_dem_fixed_theta = 182
