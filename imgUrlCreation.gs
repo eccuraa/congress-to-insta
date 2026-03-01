@@ -1,65 +1,44 @@
-// ===== CONFIGURATION =====
 const CONFIG = {
-  // Google Slides template ID (from URL)
   templateId: "1xhn0sgndIIoQT53elvLnpyebWzXsd027XN0EgsEVJRI",
-  
-  // Google Sheets ID (from URL) - leave empty if running from bound script
-  spreadsheetId: "", // Optional: only needed if standalone script
-  
-  // ImgBB API Key - get from https://api.imgbb.com/
-  imgbbApiKey: "IMGBB_API_KEY_HERE"
+  spreadsheetId: "",
+  imgbbApiKey: "YOUR_IMGBB_API_KEY_HERE",
+  cloudFunctionUrl: "https://us-central1-voting-plot-matplotlib.cloudfunctions.net/generate_arc_image"
 };
 
-/**
- * ----------------------
- * MAIN FUNCTION: LOOP OVER ALL ROWS
- * ----------------------
- * Checks each row in Scraped Data column A ("Law Name").
- * Skips empty rows or "No laws found".
- * Generates slide and uploads to ImgBB.
- * Stores URL in Post Components column C ("Image URL").
- */
 function generateAllImgBBUrls() {
-  // Defines Google Sheet
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  // Defines each of 2 sheets with variable name
   const scrapedSheet = ss.getSheetByName("Scraped Data");
   const postsSheet = ss.getSheetByName("Post Components");
-
   const lastRow = scrapedSheet.getLastRow();
 
   for (let i = 2; i <= lastRow; i++) {
-    const lawName = scrapedSheet.getRange(i, 1).getValue().toString().trim(); // Column A
-
-    // Skip if empty or "No laws found"
+    const lawName = scrapedSheet.getRange(i, 1).getValue().toString().trim();
     if (!lawName || lawName.toLowerCase() === "no laws found") continue;
 
-    // Use CRS Summary (B) if available, otherwise fallback to Law Name
     const visualSummary = postsSheet.getRange(i, 2).getValue().toString().trim();
     const textToUse = (!visualSummary || visualSummary.toLowerCase() === "no summary available")
-                      ? lawName
-                      : visualSummary;
+                      ? lawName : visualSummary;
+
+    // Read voting percentages from Post Components columns C–G (cols 3–7)
+    const sweepValues = {
+      senate_ind_value: postsSheet.getRange(i, 3).getValue(),
+      senate_dem_value: postsSheet.getRange(i, 4).getValue(),
+      house_dem_value:  postsSheet.getRange(i, 5).getValue(),
+      house_rep_value:  postsSheet.getRange(i, 6).getValue(),
+      senate_rep_value: postsSheet.getRange(i, 7).getValue(),
+    };
 
     try {
       Logger.log(`Processing row ${i}: "${textToUse}"`);
 
-      // Add text & images to slide
-      const slideId = createSlideWithText(textToUse);
-
-
-      // Export slide to PNG
+      const arcImageUrl = callPythonPlotter(sweepValues);
+      const slideId = createSlideWithText(textToUse, arcImageUrl);
       const imageBlob = exportSlideAsImage(slideId, 0);
-
-      // Upload to ImgBB
       const imageUrl = uploadToImgBB(imageBlob);
 
-      // Save URL in Post Components column C
       postsSheet.getRange(i, 8).setValue(imageUrl);
-
-      // Clean up temporary slide
       DriveApp.getFileById(slideId).setTrashed(true);
-
-      Logger.log(`Row ${i} complete: ImgBB URL -> ${imageUrl}`);
+      Logger.log(`Row ${i} complete: ${imageUrl}`);
 
     } catch (error) {
       Logger.log(`ERROR on row ${i}: ${error.toString()}`);
@@ -68,12 +47,27 @@ function generateAllImgBBUrls() {
 }
 
 /**
- * ----------------------
- * Create slide from template
- * ----------------------
+ * Calls Cloud Function with sweep values, returns ImgBB URL of the arc plot
  */
-function createSlideWithText(sheetText) {
-  // Fetch and copy template file, and save new copied slide template ID
+function callPythonPlotter(sweepValues) {
+  const response = UrlFetchApp.fetch(CONFIG.cloudFunctionUrl, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(sweepValues),
+    muteHttpExceptions: true
+  });
+
+  if (response.getResponseCode() !== 200) {
+    throw new Error(`Cloud Function failed: ${response.getContentText()}`);
+  }
+
+  return JSON.parse(response.getContentText()).imageUrl;
+}
+
+/**
+ * Create slide from template, insert arc image, replace text placeholder
+ */
+function createSlideWithText(sheetText, arcImageUrl) {
   const templateFile = DriveApp.getFileById(CONFIG.templateId);
   const copy = templateFile.makeCopy('Temp_Slide_' + Date.now());
   const slideId = copy.getId();
@@ -81,21 +75,18 @@ function createSlideWithText(sheetText) {
   const presentation = SlidesApp.openById(slideId);
   const slides = presentation.getSlides();
 
-  // Error message if no slides were copied
-  if (slides.length === 0) {
-    throw new Error('Template has no slides');
-  }
+  if (slides.length === 0) throw new Error('Template has no slides');
 
-  // Replace placeholder ("'text'") text in first slide with LLM summarized CRS summary
   const firstSlide = slides[0];
   firstSlide.replaceAllText('\[text\]', sheetText);
 
-  // Call function that adjusts graph
+  // Insert the arc plot image — adjust position/size to match your template layout
+  firstSlide.insertImage(arcImageUrl)
+    .setLeft(155).setTop(350).setWidth(400).setHeight(400);
 
   presentation.saveAndClose();
   return slideId;
 }
-
 
 
 /**
@@ -131,6 +122,8 @@ function exportSlideAsImage(presentationId, slideIndex) {
 
   return response.getBlob().setName('slide.png');
 }
+
+
 
 /**
  * ----------------------
