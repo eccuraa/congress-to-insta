@@ -17,6 +17,7 @@ All legislative data is pulled from [congress.gov](https://congress.gov) using t
 - **Instagram Graph API** - Publishing to Instagram
 - **Congress.gov API** - Scraping from Law, Bill and House Roll Call Vote endpoints
 - **Anthropic API** - Summarizing with Claude
+- **Google Cloud CLI** - To run linked Python scripts autonomously, from a Javascript project.
 
 ## Files
 - `scrapingScript.gs` - Scrapes data from Congress.gov
