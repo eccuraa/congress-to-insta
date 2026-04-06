@@ -1,93 +1,31 @@
-// ============================================================
 // Congress.gov API - Fetch Public Laws
-// 
-// This script queries the Congress.gov API to find bills that
-// recently became public law, fetches their CRS summaries,
-// and records House vote counts broken down by party.
-//
-// Results are written to two sheets in the active spreadsheet:
-//   - "Scraped Data"    : Raw law data (title, summary, votes, etc.)
-//   - "Post Components" : Column D is cleared on each run
-// ============================================================
-
-const API_KEY = 'API_KEY_HERE';
+const API_KEY = 'YOUR_API_KEY_HERE';
 const BASE_URL = 'https://api.congress.gov/v3';
 
 // ===== DATE CONFIGURATION =====
 // Set USE_CUSTOM_DATE to true to use CUSTOM_DATE, or false to use automatic (3 days ago)
-const USE_CUSTOM_DATE = false;           // Change to false for automatic mode
-const CUSTOM_DATE = '2025-12-19';        // Only used if USE_CUSTOM_DATE is true
+const USE_CUSTOM_DATE = true;           // Change to false for automatic mode
+const CUSTOM_DATE = '2026-02-18';        // Only used if USE_CUSTOM_DATE is true
 // ==============================
 
-
 /**
- * Entry point for scheduled or manual runs.
- *
- * Reads the USE_CUSTOM_DATE / CUSTOM_DATE constants at the top of the file
- * and delegates to fetchPublicLaws() with the appropriate date string (or
- * null to trigger the automatic "3 days ago" logic).
+ * Main function - fetches laws based on configuration above
  */
 function fetchPublicLawsToday() {
   const dateToUse = USE_CUSTOM_DATE ? CUSTOM_DATE : null;
   fetchPublicLaws(dateToUse);
 }
 
-
 /**
- * Prompts the user to type a date in a dialog box, validates the input,
- * and calls fetchPublicLaws() with that date.
- *
- * This function is optional — it only needs to be wired to a menu item if
- * you want an interactive "pick a date" option inside the spreadsheet UI.
- */
-function fetchPublicLawsCustomDate() {
-  const ui = SpreadsheetApp.getUi();
-  
-  const response = ui.prompt(
-    'Enter Custom Date',
-    'Enter the date to search for laws (YYYY-MM-DD format):\nExample: 2025-12-19',
-    ui.ButtonSet.OK_CANCEL
-  );
-  
-  // Do nothing if the user dismissed the dialog
-  if (response.getSelectedButton() === ui.Button.OK) {
-    const customDate = response.getResponseText().trim();
-    
-    // Reject anything that doesn't look like YYYY-MM-DD
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(customDate)) {
-      ui.alert('Invalid date format. Please use YYYY-MM-DD format (e.g., 2025-12-19)');
-      return;
-    }
-    
-    fetchPublicLaws(customDate);
-  }
-}
-
-
-/**
- * Core pipeline — fetches all public laws enacted on a given date.
- *
- * Steps performed:
- *   1. Clear and re-initialize the "Scraped Data" sheet with column headers.
- *   2. Determine the target date (custom or automatic).
- *   3. Query the Congress.gov /law endpoint for the 119th Congress within
- *      a [targetDate, now] window (max 500 results).
- *   4. Filter results to bills whose latest action was on the target date
- *      and whose action text contains "Became Public Law".
- *   5. For each matching bill, fetch its CRS summary, build its congress.gov
- *      URL, look up its House roll-call number, and retrieve party-level
- *      yea vote counts.
- *   6. Write all collected rows to the "Scraped Data" sheet.
- *
- * @param {string|null} customDate - A date string in "YYYY-MM-DD" format to
- *     search for laws, or null to automatically use a date 3 days in the past.
+ * Core function - fetches laws with optional custom date
+ * @param {string|null} customDate - Optional date in YYYY-MM-DD format, or null for automatic
  */
 function fetchPublicLaws(customDate) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet();
   const scrapedData = sheet.getSheetByName('Scraped Data');
   const postData = sheet.getSheetByName('Post Components');
   
-  // Reset the output sheet and add column headers
+  // Clear and set headers - NOW INCLUDING VOTE COLUMNS
   scrapedData.clear();
   scrapedData.appendRow([
     'Law Name', 
@@ -95,94 +33,106 @@ function fetchPublicLaws(customDate) {
     'Date', 
     'Law URL',
     'Num of House Dem Yeas',
-    'Num of House Rep Yeas'
+    'Num of House Rep Yeas',
+    'Num of Senate Dem Yeas',
+    'Num of Senate Rep Yeas',
+    'Num of Senate Ind Yeas',
+    'Num of House Ind Yeas'
   ]);
+  postData.getRange('J2:H').clearContent();
 
-  // Clear column D of Post Components so stale data isn't left behind
-  postData.getRange('D:D').clearContent();
-
-  // Capture the current timestamp so it can be used as the upper bound of
-  // the date-range query (toDateTime)
+  // Get current date/time for maxUploadDate
   const now = new Date();
   
   let dateStr;
   
   if (customDate) {
-    // User supplied an explicit date — use it as-is
+    // USE CUSTOM DATE
     dateStr = customDate;
     Logger.log(`Using custom date: ${dateStr}`);
   } else {
-    // Default mode: look 3 days into the past to account for processing delays
-    // between when a bill is signed and when it appears in the Congress.gov API
+    // USE AUTOMATIC DATE (3 days ago)
     const threeDaysAgo = new Date(now);
     threeDaysAgo.setDate(now.getDate() - 3);
-    dateStr = threeDaysAgo.toISOString().substring(0, 10); // Trim to "YYYY-MM-DD"
+    dateStr = threeDaysAgo.toISOString().substring(0, 10);
     Logger.log(`Using automatic date (3 days ago): ${dateStr}`);
   }
 
-  // Build ISO-8601 timestamps required by the Congress.gov API
-  const becameLawDate = `${dateStr}T00:00:00Z`; // Midnight on the target date
-  const maxUploadDate = now.toISOString();        // Right now
+  // Build timestamps
+  const becameLawDate = `${dateStr}T00:00:00Z`;
+  const maxUploadDate = now.toISOString();
 
-  // The 119th Congress is the current session (started January 2025)
+  // Congressional 
   const congress = 119;
+  const sessionNumber = 2
   
-  // Accumulate rows here before bulk-writing to the sheet
+
   const results = [];
   
-  // Fetch up to 500 laws updated between the target date and now
+  // Base scraping URL
   const url = `${BASE_URL}/law/${congress}?api_key=${API_KEY}&format=json&limit=500&fromDateTime=${becameLawDate}&toDateTime=${maxUploadDate}`;
 
   Logger.log(`Searching from ${becameLawDate} to ${maxUploadDate}`);
 
+  // Scrape bills
   try {
     const response = UrlFetchApp.fetch(url);
     const data = JSON.parse(response.getContentText());
     
     Logger.log(`Found ${data.bills ? data.bills.length : 0} bills in date range`);
 
-    // Nothing to process if the API returned an empty list
     if (!data.bills || data.bills.length === 0) {
       scrapedData.appendRow(['No laws found', '', '', '', '', '']);
       return;
     }
 
-    // Iterate over each bill returned and keep only those that:
-    //   (a) have a latest action dated on the target day, AND
-    //   (b) whose action text confirms it "Became Public Law"
+    // Filter for bills that became law on target date
     for (const bill of data.bills) {
       
       if (bill.latestAction.actionDate === dateStr &&
           bill.latestAction.text.includes('Became Public Law')) {
         
-        // Fetch the CRS-authored plain-language summary for this bill
+        // Fetch summary
         const summary = fetchSummary(congress, bill.type.toLowerCase(), bill.number);
         
-        // Convert "YYYY-MM-DD" to a human-readable string, e.g. "December 19, 2025"
+        // Format the date for the spreadsheet
         const formattedDate = formatDateStr(bill.latestAction.actionDate);
 
-        // Build the canonical congress.gov URL for the bill
         const govURL = findPublicUrl(bill.type, bill.number);
         
-        // Look up the House roll-call vote number from the bill's action history,
-        // then use it to retrieve Democrat and Republican yea vote totals
-        const rollCallNum = getHouseRollCallNumber(congress, bill.type.toLowerCase(), bill.number);
-        const voteData = rollCallNum
-          ? fetchHouseVotesByRollCall(congress, rollCallNum)
-          : { demYeas: 'N/A', repYeas: 'N/A' }; // No roll call found — mark as N/A
+        // Fetch House roll call number and vote data
+        const { houseVoteID, senateVoteID} = getVoteIDs(congress, bill.type.toLowerCase(), bill.number);
+        
+        // Skip bills that don't have a yea-or-nay or recorded vote
+        if (!houseVoteID) {
+          Logger.log(`⊗ Removing "${bill.title}" from posting queue - not a yea-or-nay/recorded vote (voice vote)`);
+          continue; // Skip to next bill
+        }
 
-        // Assemble the row for this law
+        const houseVoteData = houseVoteID ? fetchHouseVotes(congress, sessionNumber, houseVoteID) : { demYeas: 'N/A', repYeas: 'N/A' , indYeas: 'N/A'};
+        
+        const senateVoteData = senateVoteID ? fetchSenateVotes(congress, sessionNumber, senateVoteID) : { demYeas: 'N/A', repYeas: 'N/A' , indYeas: 'N/A'};
+        
+
+
+        // Push law data including vote counts
         results.push([
           bill.title || 'Unknown',
           summary,
           formattedDate,
           govURL,
-          voteData.demYeas,
-          voteData.repYeas
+          houseVoteData.demYeas,
+          houseVoteData.repYeas,
+          senateVoteData.demYeas,
+          senateVoteData.repYeas,
+          senateVoteData.indYeas,
+          houseVoteData.indYeas
         ]);
         
         Logger.log(`Found: ${bill.title}`);
-        Logger.log(`  House Votes - Dem Yeas: ${voteData.demYeas}, Rep Yeas: ${voteData.repYeas}`);
+        Logger.log(`  House Votes - Dem Yeas: ${houseVoteData.demYeas}, Rep Yeas: ${houseVoteData.repYeas}, Ind Yeas: ${houseVoteData.indYeas}`);
+        Logger.log(`  Senate Votes - Dem Yeas: ${senateVoteData.demYeas}, Rep Yeas: ${senateVoteData.repYeas}, Ind Yeas:  ${senateVoteData.indYeas}`);
+
       }
     }
     
@@ -190,48 +140,36 @@ function fetchPublicLaws(customDate) {
     Logger.log('Error: ' + error.toString());
   }
   
-  // Write all collected rows to the sheet, or indicate nothing was found
+  // Write results in sheet
   if (results.length === 0) {
     scrapedData.appendRow(['No laws found', '', '', '', '', '']);
   } else {
     results.forEach(row => scrapedData.appendRow(row));
   }
   
-  // Auto-fit column widths so the content is readable without manual resizing
   scrapedData.autoResizeColumns(1, 6);
   
   Logger.log(`Complete! Found ${results.length} law(s) that became public on ${dateStr}`);
 }
 
-
 /**
- * Finds the most recent House roll-call vote number for a given bill.
- *
- * The function works in two steps:
- *   1. Fetch the bill's detail record to obtain the actions list URL.
- *   2. Iterate over the actions in reverse-chronological order and return
- *      the roll number of the first House recorded vote encountered.
- *
- * @param {number} congress    - Congress session number (e.g. 119).
- * @param {string} billType    - Lowercase bill type (e.g. "hr", "s", "hjres").
- * @param {number} billNumber  - The bill number.
- * @returns {number|null} The House roll-call number, or null if none exists.
+ * Get House roll call number for a bill by fetching actions
+ * Returns the most recent House roll call number
  */
-function getHouseRollCallNumber(congress, billType, billNumber) {
+function getVoteIDs(congress, billType, billNumber) {
   try {
-    // Step 1: Fetch the bill detail to retrieve the nested actions URL
+    // Step 1: Get bill to find actions URL
     const billUrl = `${BASE_URL}/bill/${congress}/${billType}/${billNumber}?api_key=${API_KEY}&format=json`;
     const billResponse = UrlFetchApp.fetch(billUrl);
     const billData = JSON.parse(billResponse.getContentText());
     
-    // Guard against bills that have no actions URL in their detail record
     if (!billData.bill || !billData.bill.actions || !billData.bill.actions.url) {
       Logger.log(`  No actions URL for ${billType.toUpperCase()} ${billNumber}`);
       return null;
     }
     
-    // Step 2: Fetch the full list of legislative actions for this bill
-    const actionsUrl = `${billData.bill.actions.url}&api_key=${API_KEY}`;
+    // Step 2: Fetch actions
+    const actionsUrl = `${billData.bill.actions.url}&limit=250&api_key=${API_KEY}`;
     const actionsResponse = UrlFetchApp.fetch(actionsUrl);
     const actionsData = JSON.parse(actionsResponse.getContentText());
     
@@ -240,26 +178,30 @@ function getHouseRollCallNumber(congress, billType, billNumber) {
       return null;
     }
     
-    // Step 3: Walk through actions (newest first) and return the roll number
-    // from the first House recorded vote we encounter
-    let latestRollCall = null;
+    // Step 3: Find the most recent House roll call vote
+    let houseVoteID = null;
+    let senateVoteID = null;
+
     
     for (const action of actionsData.actions) {
-      // Only some actions contain a recordedVotes array
       if (action.recordedVotes && action.recordedVotes.length > 0) {
         for (const recordedVote of action.recordedVotes) {
-          if (recordedVote.chamber === 'House' && recordedVote.rollNumber) {
-            latestRollCall = recordedVote.rollNumber;
-            Logger.log(`  Found House roll call: ${latestRollCall}`);
-            return latestRollCall; // Return immediately — we only need the latest
+          if (recordedVote.chamber === 'House') {
+            // Take the first one we find (actions are typically in reverse chronological order)
+            houseVoteID = recordedVote.rollNumber;
+            Logger.log(`  Found house vote ID: ${houseVoteID}`);
+            } else if (recordedVote.chamber === 'Senate' && !senateVoteID) {
+            senateVoteID = recordedVote.rollNumber;
+            Logger.log(`  Found senate vote ID: ${senateVoteID}`);
           }
         }
       }
+      if (houseVoteID && senateVoteID) break;
     }
-    
-    Logger.log(`  No House roll call found for ${billType.toUpperCase()} ${billNumber}`);
-    return null;
-    
+
+    Logger.log(`  Found roll calls for ${billType.toUpperCase()} ${billNumber} — House: ${houseVoteID}, Senate: ${senateVoteID}`);
+    return { houseVoteID, senateVoteID };
+
   } catch (error) {
     Logger.log(`  Error getting roll call for ${billType.toUpperCase()} ${billNumber}: ${error.toString()}`);
     return null;
@@ -267,72 +209,92 @@ function getHouseRollCallNumber(congress, billType, billNumber) {
 }
 
 
+
+
 /**
- * Fetches Democrat and Republican yea vote totals for a House roll-call vote.
- *
- * Calls the /house-vote endpoint for session 1 of the given Congress and
- * parses the votePartyTotal array, looking for entries with party type "D"
- * (Democrat) and "R" (Republican).
- *
- * @param {number} congress        - Congress session number (e.g. 119).
- * @param {number} rollCallNumber  - The House roll-call vote number.
- * @returns {{ demYeas: number|string, repYeas: number|string }}
- *     An object with yea totals for each party, or 'N/A' if unavailable.
+ * Fetch House vote data using roll call number
+ * Returns Democrat and Republican yea vote counts
  */
-function fetchHouseVotesByRollCall(congress, rollCallNumber) {
-  // Default return value used whenever data cannot be retrieved
-  const defaultVotes = { demYeas: 'N/A', repYeas: 'N/A' };
+function fetchHouseVotes(congress, sessionNumber, houseVoteID) {
+  const defaultVotes = { demYeas: 'N/A', repYeas: 'N/A' , indYeas: 'N/A'};
   
   try {
-    // All votes in the 119th Congress so far are in session 1
-    const sessionNumber = 1;
     
-    // Fetch the detailed roll-call vote record
-    const rollCallUrl = `https://api.congress.gov/v3/house-vote/${congress}/${sessionNumber}/${rollCallNumber}?api_key=${API_KEY}`;
+    // Fetch roll call vote details
+    const rollCallUrl = `https://api.congress.gov/v3/house-vote/${congress}/${sessionNumber}/${houseVoteID}?api_key=${API_KEY}&format=json`;
     const rollCallResponse = UrlFetchApp.fetch(rollCallUrl);
     const rollCallData = JSON.parse(rollCallResponse.getContentText());
-    
-    // Guard: ensure the expected nested structure exists before accessing it
+
+    // Extract party vote totals
     if (!rollCallData.houseRollCallVote || !rollCallData.houseRollCallVote.votePartyTotal) {
-      Logger.log(`  No vote party totals in roll call ${rollCallNumber}`);
+      Logger.log(`  No vote party totals in roll call ${houseVoteID}`);
       return defaultVotes;
     }
     
-    let demYeas = 'N/A';
-    let repYeas = 'N/A';
+    let { demYeas, repYeas , indYeas} = defaultVotes;
     
-    // Parse each party entry — we only care about Democrats ("D") and Republicans ("R")
     for (const item of rollCallData.houseRollCallVote.votePartyTotal) {
       if (item.party && item.party.type) {
         if (item.party.type === 'D') {
-          demYeas = item.yeaTotal || 0;  // Default to 0 if yeaTotal is missing/falsy
+          demYeas = item.yeaTotal || 0;
         } else if (item.party.type === 'R') {
           repYeas = item.yeaTotal || 0;
+        }    else if (item.party.type === 'I') {
+            indYeas = item.yeaTotal || 0;
         }
       }
     }
     
-    return { demYeas, repYeas };
+    return { demYeas, repYeas , indYeas};
     
   } catch (error) {
-    Logger.log(`  Error fetching vote data for roll call ${rollCallNumber}: ${error.toString()}`);
+    Logger.log(`  Error fetching vote data for roll call ${houseVoteID}: ${error.toString()}`);
     return defaultVotes;
   }
 }
 
+function fetchSenateVotes(congress, sessionNumber, senateVoteID) {
 
-/**
- * Fetches the most recent CRS (Congressional Research Service) summary for a bill.
- *
- * The Congress.gov API returns summaries as a nested sub-resource. This function:
- *   1. Fetches the bill detail record to get the summaries sub-resource URL.
- *   2. Fetches that URL and returns the text of the last (most recent) summary.
- *
- * @param {number} congress    - Congress session number (e.g. 119).
- * @param {string} billType    - Lowercase bill type (e.g. "hr", "s").
- * @param {number} billNumber  - The bill number.
- * @returns {string} The plain-text summary, or a descriptive fallback string.
- */
+  // 'Pads' the senateVoteID number with leading zeros until it reaches 5 characters
+  const urlVoteNum = String(senateVoteID).padStart(5, '0');
+
+  const url = `https://www.senate.gov/legislative/LIS/roll_call_votes/vote${congress}${sessionNumber}/vote_${congress}_${sessionNumber}_${urlVoteNum}.xml`;
+  
+
+  const response = UrlFetchApp.fetch(url);
+  const xmlContent = response.getContentText();
+  const document = XmlService.parse(xmlContent);
+  const root = document.getRootElement();
+
+  // Step 1: Get total yeas from <count><yeas>
+  const totalYeas = parseInt(root.getChild('count').getChild('yeas').getText());
+
+  const members = root.getChild('members').getChildren('member');
+  let demYeas = 0;
+  let repYeas = 0;
+  let indYeas = 0;
+
+  for (const member of members) {
+    const party = member.getChild('party').getText();
+    const vote = member.getChild('vote_cast').getText();
+    if (vote === 'Yea') {
+      if (party === 'D') demYeas++;
+      if (party === 'R') repYeas++;
+      if (party === 'I') indYeas++;
+    }
+  }
+
+  // Assert counted total matches XML total
+  if (demYeas + repYeas + indYeas !== totalYeas) {
+    Logger.log(`Assert failed: demYeas (${demYeas}) + repYeas (${repYeas}) + indYeas (${indYeas}) !== totalYeas (${totalYeas})`);
+  }
+
+  return { demYeas, repYeas, indYeas };
+
+}
+
+
+// Fetch CRS summaries
 function fetchSummary(congress, billType, billNumber) {
   const url = `${BASE_URL}/bill/${congress}/${billType}/${billNumber}?api_key=${API_KEY}&format=json`;
   
@@ -340,12 +302,10 @@ function fetchSummary(congress, billType, billNumber) {
     const response = UrlFetchApp.fetch(url);
     const data = JSON.parse(response.getContentText());
     
-    // Guard: bill detail must contain a summaries sub-resource URL
     if (!data.bill || !data.bill.summaries || !data.bill.summaries.url) {
       return 'No summary accessed';
     }
     
-    // Fetch the summaries sub-resource
     const summariesUrl = `${data.bill.summaries.url}&api_key=${API_KEY}`;
     const summariesResponse = UrlFetchApp.fetch(summariesUrl);
     const summariesData = JSON.parse(summariesResponse.getContentText());
@@ -354,8 +314,6 @@ function fetchSummary(congress, billType, billNumber) {
       return 'No summary available';
     }
     
-    // Take the last item — summaries are ordered oldest-to-newest, so the last
-    // entry represents the most up-to-date version
     const summary = summariesData.summaries[summariesData.summaries.length - 1];
     return summary.text || 'No summary text';
     
@@ -364,49 +322,24 @@ function fetchSummary(congress, billType, billNumber) {
   }
 }
 
-
-/**
- * Converts a "YYYY-MM-DD" date string into a locale-formatted string.
- *
- * Time is set to midnight to avoid off-by-one-day errors caused by timezone
- * conversions when constructing a Date object from a bare date string.
- *
- * @param {string} dateStr - A date string in "YYYY-MM-DD" format.
- * @returns {string} A formatted date such as "December 19, 2025".
- */
+// Format date string
 function formatDateStr(dateStr) {
-  // Append T00:00:00 to prevent UTC vs. local timezone shift from rolling the date
   const date = new Date(dateStr + 'T00:00:00');
   const options = { year: 'numeric', month: 'long', day: 'numeric' };
   return date.toLocaleDateString('en-US', options);
 }
 
-
-/**
- * Builds the canonical congress.gov URL for a given bill.
- *
- * @param {string} type   - Bill type in any case (e.g. "HR", "S", "HJRES", "SJRES").
- * @param {number} num    - The bill number.
- * @returns {string} The full congress.gov URL, or an empty string for unsupported types.
- *
- * @example
- *   findPublicUrl("HR", 1234)
- *   // => "https://www.congress.gov/bill/119th-congress/house-bill/1234"
- */
+// Create congress.gov URL
 function findPublicUrl(type, num) {
   const t = type.toLowerCase();
-
-  // Map each short bill-type code to the path segment used on congress.gov
   const map = {
-    hr:    "house-bill",
-    s:     "senate-bill",
+    hr:  "house-bill",
+    s:   "senate-bill",
     hjres: "house-joint-resolution",
     sjres: "senate-joint-resolution"
   };
 
   const path = map[t];
-
-  // Return an empty string for any bill type not in the map (e.g. "hconres")
   if (!path) return "";
 
   return `https://www.congress.gov/bill/119th-congress/${path}/${num}`;
