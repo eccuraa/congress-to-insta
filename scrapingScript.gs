@@ -5,7 +5,7 @@ const BASE_URL = 'https://api.congress.gov/v3';
 // ===== DATE CONFIGURATION =====
 // Set USE_CUSTOM_DATE to true to use CUSTOM_DATE, or false to use automatic (3 days ago)
 const USE_CUSTOM_DATE = true;           // Change to false for automatic mode
-const CUSTOM_DATE = '2026-02-18';        // Only used if USE_CUSTOM_DATE is true
+const CUSTOM_DATE = '2026-02-03';        // Only used if USE_CUSTOM_DATE is true
 // ==============================
 
 /**
@@ -207,9 +207,6 @@ function getVoteIDs(congress, billType, billNumber) {
     return null;
   }
 }
-
-
-
 
 /**
  * Fetch House vote data using roll call number
