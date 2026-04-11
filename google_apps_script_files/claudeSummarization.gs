@@ -1,10 +1,4 @@
 // ----------------------
-// CONFIG
-// ----------------------
-const ANTHROPIC_API_KEY = "API_KEY_HERE"; // Get from console.anthropic.com
-const MODEL = "claude-sonnet-4-20250514"; // Claude Sonnet 4 (best balance of speed/quality/price)
-
-// ----------------------
 // CORE FUNCTION: Calls Claude API with DEBUG LOGGING
 // ----------------------
 function callClaude(promptText) {
