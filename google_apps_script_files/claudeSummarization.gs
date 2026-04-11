@@ -1,153 +1,130 @@
-// ----------------------
-// CORE FUNCTION: Calls Claude API with DEBUG LOGGING
-// ----------------------
-function callClaude(promptText) {
-  Logger.log("=== callClaude() START ===");
-  Logger.log("Prompt received:\n" + promptText);
+// ============================================================
+// claudeSummarization.gs — Calls Claude API to generate summaries
+// Depends on: 0_Config.gs (ANTHROPIC_API_KEY, MODEL)
+// ============================================================
 
-  const url = "https://api.anthropic.com/v1/messages";
-  Logger.log("Request URL: " + url);
+// ============================================================
+// CLASS: ClaudeClient
+// Handles all HTTP communication with the Anthropic API
+// ============================================================
+class ClaudeClient {
+  constructor(apiKey, model) {
+    this.apiKey = apiKey;
+    this.model = model;
+    this._apiUrl = "https://api.anthropic.com/v1/messages";
+  }
 
-  const payload = {
-    model: MODEL,
-    max_tokens: 1024,
-    messages: [
-      {
-        role: "user",
-        content: promptText,
+  call(promptText) {
+    const options = {
+      method: "post",
+      contentType: "application/json",
+      headers: {
+        "x-api-key": this.apiKey,
+        "anthropic-version": "2023-06-01",
       },
-    ],
-  };
+      payload: JSON.stringify({
+        model: this.model,
+        max_tokens: 1024,
+        messages: [{ role: "user", content: promptText }],
+      }),
+      muteHttpExceptions: true,
+    };
 
-  Logger.log("Payload JSON:\n" + JSON.stringify(payload, null, 2));
+    let response;
+    try {
+      response = UrlFetchApp.fetch(this._apiUrl, options);
+    } catch (err) {
+      Logger.log("UrlFetchApp.fetch() failed: " + err.toString());
+      return { success: false, reason: "fetch_error" };
+    }
 
-  const options = {
-    method: "post",
-    contentType: "application/json",
-    headers: {
-      "x-api-key": ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    payload: JSON.stringify(payload),
-    muteHttpExceptions: true,
-  };
+    const statusCode = response.getResponseCode();
 
-  let response;
-  try {
-    Logger.log("Sending request to Claude API...");
-    response = UrlFetchApp.fetch(url, options);
-    Logger.log("HTTP Response Code: " + response.getResponseCode());
-  } catch (err) {
-    Logger.log("❌ ERROR: UrlFetchApp.fetch() failed:");
-    Logger.log(err.toString());
-    return "(No summary generated - Fetch error)";
+    if (statusCode === 429) {
+      return { success: false, reason: "rate_limited" };
+    }
+
+    let result;
+    try {
+      result = JSON.parse(response.getContentText());
+    } catch (err) {
+      Logger.log("JSON.parse() failed: " + err.toString());
+      return { success: false, reason: "invalid_json" };
+    }
+
+    if (result.error) {
+      Logger.log(
+        "API error — the prompt sent to Claude was empty or malformed. " +
+        "This usually means CLAUDE_SUMMARY() was run manually rather than " +
+        "as an in-cell Google Sheets function. Error detail: " + result.error.message
+      );
+      return { success: false, reason: "api_error", message: result.error.message };
+    }
+
+    const text = (result.content ?? [])
+      .filter((block) => block.type === "text")
+      .map((block) => block.text)
+      .join("\n")
+      .trim();
+
+    if (!text) {
+      Logger.log("No text content in response");
+      return { success: false, reason: "no_content" };
+    }
+
+    return { success: true, text };
   }
 
-  const raw = response.getContentText();
-  Logger.log("Raw API Response:\n" + raw);
-
-  let result;
-  try {
-    result = JSON.parse(raw);
-  } catch (err) {
-    Logger.log("❌ ERROR: JSON.parse() failed:");
-    Logger.log(err.toString());
-    return "(No summary generated - Invalid JSON)";
+  test() {
+    Logger.log("=== TESTING CLAUDE API ===");
+    const result = this.call("Say 'Hello, API is working!' in exactly 5 words.");
+    Logger.log("Test Result: " + (result.success ? result.text : result.reason));
+    Logger.log("=== TEST COMPLETE ===");
   }
-
-  // Debug entire parsed result
-  Logger.log("Parsed API Response:\n" + JSON.stringify(result, null, 2));
-
-  // Check for API errors
-  if (result.error) {
-    Logger.log("❌ API ERROR DETECTED:");
-    Logger.log("Error Type: " + result.error.type);
-    Logger.log("Error Message: " + result.error.message);
-    return `(API Error: ${result.error.message})`;
-  }
-
-  // Check for rate limit
-  if (response.getResponseCode() === 429) {
-    Logger.log("⚠️ RATE LIMIT HIT - Waiting 2 seconds...");
-    Utilities.sleep(2000);
-    return "(Rate limited - retry needed)";
-  }
-
-  // Extract text from Claude's response format
-  if (!result.content || result.content.length === 0) {
-    Logger.log("⚠️ No content array in response");
-    Logger.log("Full result keys: " + Object.keys(result).join(", "));
-    return "(No summary generated - No content)";
-  }
-
-  // Claude returns content as array of blocks
-  const textBlocks = result.content.filter((block) => block.type === "text");
-
-  if (textBlocks.length === 0) {
-    Logger.log("⚠️ No text blocks found in content");
-    Logger.log(
-      "Content structure:\n" + JSON.stringify(result.content, null, 2),
-    );
-    return "(No summary generated - No text blocks)";
-  }
-
-  const text = textBlocks
-    .map((block) => block.text)
-    .join("\n")
-    .trim();
-
-  if (!text) {
-    Logger.log("⚠️ Empty text after extraction");
-    return "(No summary generated - Empty text)";
-  }
-
-  Logger.log("✅ Generated Summary:\n" + text);
-  Logger.log("=== callClaude() END ===");
-
-  return text;
 }
 
-// ------------------------------------------------------
-// TEST FUNCTION - Run this directly to test API
-// ------------------------------------------------------
-function testClaudeAPI() {
-  Logger.log("=== TESTING CLAUDE API ===");
-  const testPrompt = "Say 'Hello, API is working!' in exactly 5 words.";
-  const result = callClaude(testPrompt);
-  Logger.log("Test Result: " + result);
-  Logger.log("=== TEST COMPLETE ===");
+// ============================================================
+// CLASS: SummaryRetrier
+// Wraps ClaudeClient with retry logic and backoff strategy
+// ============================================================
+class SummaryRetrier {
+  constructor(client, maxAttempts = 3) {
+    this.client = client;
+    this.maxAttempts = maxAttempts;
+  }
+
+  _getWaitMs(reason) {
+    return reason === "rate_limited" ? 3000 : 1000;
+  }
+
+  run(prompt) {
+    for (let attempt = 1; attempt <= this.maxAttempts; attempt++) {
+      Logger.log(`Attempt ${attempt} of ${this.maxAttempts}`);
+      const result = this.client.call(prompt);
+
+      if (result.success) return result.text;
+
+      Logger.log(`Attempt ${attempt} failed — reason: ${result.reason}`);
+
+      if (attempt < this.maxAttempts) {
+        const waitMs = this._getWaitMs(result.reason);
+        Logger.log(`Waiting ${waitMs}ms before retry...`);
+        Utilities.sleep(waitMs);
+      }
+    }
+
+    Logger.log("❌ All attempts failed");
+    return null;
+  }
 }
 
-// ------------------------------------------------------
-// Usage in sheet: =CLAUDE_SUMMARY(B2, ROW())
-// ------------------------------------------------------
-function CLAUDE_SUMMARY(text, row) {
-  Logger.log("=== CLAUDE_SUMMARY() START ===");
-  Logger.log("Input text: " + text);
-  Logger.log("Row: " + row);
-
-  // Case: CRS says "No summary available"
-  if (
-    typeof text === "string" &&
-    text.trim().toLowerCase() === "no summary available"
-  ) {
-    Logger.log(
-      "Detected 'No summary available' – fetching law name from column A",
-    );
-    const lawName = SpreadsheetApp.getActiveSheet().getRange(row, 1).getValue();
-    Logger.log("Fetched lawName: " + lawName);
-    text = lawName || "";
-  }
-
-  if (!text) {
-    Logger.log("⚠️ Empty text after fallback. Returning blank.");
-    return "";
-  }
-
-  Logger.log("Final text to summarize:\n" + text);
-
-  // Prompt to accompany official CRS summary input, optimized for Claude
-  const prompt = `I am managing an Instagram account for politically curious American teenagers and young adults (similar to the Dutch account @checkjestem).
+// ============================================================
+// CLASS: PromptBuilder
+// Constructs the Claude prompt from input text
+// ============================================================
+class PromptBuilder {
+  build(text) {
+    return `I am managing an Instagram account for politically curious American teenagers and young adults (similar to the Dutch account @checkjestem).
 
 I need you to act as my Editor. I will provide you with a "CRS Summary" of a bill from Congress.gov. Your goal is to rewrite that summary into a "Visual Summary" that will appear on an Instagram image.
 
@@ -179,44 +156,74 @@ Please write the Visual Summary for the following text:
 '${text}'
 
 Return ONLY the summary text, nothing else.`;
+  }
+}
 
-  Logger.log("Final Prompt Sent to Claude:\n" + prompt);
-
-  // RETRY LOGIC for intermittent failures
-  let summary = null;
-  let attempts = 0;
-  const maxAttempts = 2;
-
-  while (attempts < maxAttempts && !summary) {
-    attempts++;
-    Logger.log(`Attempt ${attempts} of ${maxAttempts}`);
-
-    const result = callClaude(prompt);
-
-    // Check if I got a real response (not an error message)
-    if (result && !result.startsWith("(")) {
-      summary = result;
-      break;
+// ============================================================
+// CLASS: InputResolver
+// Resolves the input text, falling back to law name if needed
+// ============================================================
+class InputResolver {
+  resolve(text, row) {
+    if (typeof text === "string" && text.trim().toLowerCase() === "no summary available") {
+      Logger.log("Detected 'No summary available' — fetching law name from column A");
+      const lawName = SpreadsheetApp
+        .getActiveSheet()
+        .getRange(row, SCRAPED_COL.lawName)
+        .getValue();
+      Logger.log("Fetched lawName: " + lawName);
+      return lawName || "";
     }
+    return text;
+  }
+}
 
-    Logger.log(`Attempt ${attempts} failed: ${result}`);
-
-    // If rate limited, wait longer
-    if (result.includes("Rate limited")) {
-      Logger.log("Waiting 3 seconds for rate limit...");
-      Utilities.sleep(3000);
-    } else if (attempts < maxAttempts) {
-      Logger.log("Waiting 1 second before retry...");
-      Utilities.sleep(1000);
-    }
+// ============================================================
+// CLASS: SummaryGenerator
+// Orchestrates the full summary generation pipeline
+// ============================================================
+class SummaryGenerator {
+  constructor() {
+    this.client = new ClaudeClient(ANTHROPIC_API_KEY, MODEL);
+    this.retrier = new SummaryRetrier(this.client);
+    this.promptBuilder = new PromptBuilder();
+    this.inputResolver = new InputResolver();
   }
 
-  if (!summary) {
-    Logger.log("❌ All attempts failed");
-    summary = "(Unable to generate - see logs)";
-  }
+  generate(rawText, row) {
+    Logger.log("=== CLAUDE_SUMMARY() START ===");
+    Logger.log("Input text: " + rawText);
+    Logger.log("Row: " + row);
 
-  Logger.log("Summary Returned:\n" + summary);
-  Logger.log("=== CLAUDE_SUMMARY() END ===");
-  return summary;
+    const text = this.inputResolver.resolve(rawText, row);
+
+    if (!text) {
+      Logger.log("⚠️ Empty text after fallback. Returning blank.");
+      return "";
+    }
+
+    Logger.log("Final text to summarize:\n" + text);
+
+    const prompt = this.promptBuilder.build(text);
+    Logger.log("Final Prompt Sent to Claude:\n" + prompt);
+
+    const summary = this.retrier.run(prompt) ?? "(Unable to generate - see logs)";
+
+    Logger.log("Summary Returned:\n" + summary);
+    Logger.log("=== CLAUDE_SUMMARY() END ===");
+    return summary;
+  }
+}
+
+// ============================================================
+// ENTRY POINTS
+// ============================================================
+
+// Usage in sheet: =CLAUDE_SUMMARY(B2, ROW())
+function CLAUDE_SUMMARY(text, row) {
+  return new SummaryGenerator().generate(text, row);
+}
+
+function testClaudeAPI() {
+  new ClaudeClient(ANTHROPIC_API_KEY, MODEL).test();
 }
