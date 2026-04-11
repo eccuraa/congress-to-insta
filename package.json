@@ -1,9 +1,9 @@
 {
   "type": "module",
   "scripts": {
-    "lint": "eslint --ext .gs .",
+    "lint": "eslint --ext .gs google_apps_script_files/",
     "lint:fix": "npm run lint -- --fix",
-    "prettier": "prettier **/*.gs --check",
+    "prettier": "prettier google_apps_script_files/**/*.gs --check",
     "prettier:fix": "npm run prettier -- --write",
     "format": "npm run prettier:fix && npm run lint:fix"
   },
