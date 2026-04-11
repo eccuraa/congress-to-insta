@@ -20,9 +20,9 @@ function callClaude(promptText) {
     messages: [
       {
         role: "user",
-        content: promptText
-      }
-    ]
+        content: promptText,
+      },
+    ],
   };
 
   Logger.log("Payload JSON:\n" + JSON.stringify(payload, null, 2));
@@ -32,10 +32,10 @@ function callClaude(promptText) {
     contentType: "application/json",
     headers: {
       "x-api-key": ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01"
+      "anthropic-version": "2023-06-01",
     },
     payload: JSON.stringify(payload),
-    muteHttpExceptions: true
+    muteHttpExceptions: true,
   };
 
   let response;
@@ -87,15 +87,20 @@ function callClaude(promptText) {
   }
 
   // Claude returns content as array of blocks
-  const textBlocks = result.content.filter(block => block.type === "text");
-  
+  const textBlocks = result.content.filter((block) => block.type === "text");
+
   if (textBlocks.length === 0) {
     Logger.log("⚠️ No text blocks found in content");
-    Logger.log("Content structure:\n" + JSON.stringify(result.content, null, 2));
+    Logger.log(
+      "Content structure:\n" + JSON.stringify(result.content, null, 2),
+    );
     return "(No summary generated - No text blocks)";
   }
 
-  const text = textBlocks.map(block => block.text).join("\n").trim();
+  const text = textBlocks
+    .map((block) => block.text)
+    .join("\n")
+    .trim();
 
   if (!text) {
     Logger.log("⚠️ Empty text after extraction");
@@ -128,8 +133,13 @@ function CLAUDE_SUMMARY(text, row) {
   Logger.log("Row: " + row);
 
   // Case: CRS says "No summary available"
-  if (typeof text === "string" && text.trim().toLowerCase() === "no summary available") {
-    Logger.log("Detected 'No summary available' – fetching law name from column A");
+  if (
+    typeof text === "string" &&
+    text.trim().toLowerCase() === "no summary available"
+  ) {
+    Logger.log(
+      "Detected 'No summary available' – fetching law name from column A",
+    );
     const lawName = SpreadsheetApp.getActiveSheet().getRange(row, 1).getValue();
     Logger.log("Fetched lawName: " + lawName);
     text = lawName || "";
@@ -143,8 +153,7 @@ function CLAUDE_SUMMARY(text, row) {
   Logger.log("Final text to summarize:\n" + text);
 
   // Prompt to accompany official CRS summary input, optimized for Claude
-  const prompt =
-    `I am managing an Instagram account for politically curious American teenagers and young adults (similar to the Dutch account @checkjestem).
+  const prompt = `I am managing an Instagram account for politically curious American teenagers and young adults (similar to the Dutch account @checkjestem).
 
 I need you to act as my Editor. I will provide you with a "CRS Summary" of a bill from Congress.gov. Your goal is to rewrite that summary into a "Visual Summary" that will appear on an Instagram image.
 
@@ -187,17 +196,17 @@ Return ONLY the summary text, nothing else.`;
   while (attempts < maxAttempts && !summary) {
     attempts++;
     Logger.log(`Attempt ${attempts} of ${maxAttempts}`);
-    
+
     const result = callClaude(prompt);
-    
+
     // Check if I got a real response (not an error message)
     if (result && !result.startsWith("(")) {
       summary = result;
       break;
     }
-    
+
     Logger.log(`Attempt ${attempts} failed: ${result}`);
-    
+
     // If rate limited, wait longer
     if (result.includes("Rate limited")) {
       Logger.log("Waiting 3 seconds for rate limit...");

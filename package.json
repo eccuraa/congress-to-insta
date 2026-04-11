@@ -1,0 +1,18 @@
+{
+  "type": "module",
+  "scripts": {
+    "lint": "eslint --ext .gs .",
+    "lint:fix": "npm run lint -- --fix",
+    "prettier": "prettier **/*.gs --check",
+    "prettier:fix": "npm run prettier -- --write",
+    "format": "npm run prettier:fix && npm run lint:fix"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.5",
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.2.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-googleappsscript": "^1.0.5",
+    "prettier": "^3.8.2"
+  }
+}
