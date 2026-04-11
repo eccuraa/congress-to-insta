@@ -2,6 +2,7 @@
 // Config.gs — Global constants for congress-to-insta
 // All sheet names, column indexes, and API settings live here.
 // Update this file if you rename columns or sheets.
+// And ensure that your Google Apps Script files are ordered alphabetically, so this will be the first file of the 5!
 // ============================================================
 
 // ----------------------
