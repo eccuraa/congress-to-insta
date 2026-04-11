@@ -1,14 +1,3 @@
-// ===== CONFIGURATION =====
-const SETUP = {
-  // Instagram API credentials
-  instagramAccessToken: "API_KEY_HERE",
-  instagramAccountId: "ACC_ID_HERE",
-
-  // Posting settings
-  delayBetweenPosts: 300, // ideally would be 5 minutes between posts (in milliseconds)
-  containerWaitTime: 10000, // 10 seconds to wait for container creation
-};
-
 /**
  * ========================================
  * MAIN FUNCTION: Post to Instagram from Sheet
@@ -25,7 +14,7 @@ function imageUrlToInstaPipeline() {
   Logger.log("=== STARTING INSTAGRAM POSTING PIPELINE ===\n");
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const postsSheet = ss.getSheetByName("Post Components");
+  const postsSheet = ss.getSheetByName(SHEET_NAMES.postComponents);
 
   if (!postsSheet) {
     throw new Error('Sheet "Post Components" not found');
@@ -35,9 +24,9 @@ function imageUrlToInstaPipeline() {
   let postsCreated = 0;
 
   for (let i = 2; i <= lastRow; i++) {
-    const captionCell = postsSheet.getRange(i, 1).getValue();
-    const imageUrlCell = postsSheet.getRange(i, 3).getValue();
-    const postStatusCell = postsSheet.getRange(i, 4).getValue();
+    const captionCell = postsSheet.getRange(i, POST_COL.caption).getValue();
+    const imageUrlCell = postsSheet.getRange(i, POST_COL.imageUrl).getValue();
+    postsSheet.getRange(i, POST_COL.postStatus).setValue(POST_STATUS.posted);
 
     // Skip if no caption
     if (!captionCell) {
@@ -52,7 +41,7 @@ function imageUrlToInstaPipeline() {
     }
 
     // Skip if already posted
-    if (postStatusCell === "✓ Posted") {
+    if (POST_COL.postStatus === "✓ Posted") {
       Logger.log(`Row ${i}: Already posted, skipping`);
       continue;
     }
